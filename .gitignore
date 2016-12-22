@@ -36,7 +36,6 @@ profile.cov
 # we don't vendor godep _workspace
 **/Godeps/_workspace/**
 vendor/
-.vscode/
 
 # ignore build artifacts
 build/
