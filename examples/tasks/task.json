@@ -1,0 +1,23 @@
+{
+    "version": 1,
+    "schedule": {
+        "type": "simple",
+        "interval": "3s"
+    },
+    "workflow": {
+        "collect": {
+            "metrics": {
+                "/intel/logs/*": {}
+            },
+            "config": {
+                "/intel/logs": {
+                    "metric_name": "rabbit_logs",
+                    "cache_dir": "cache/snap",
+                    "log_dir": "logs/kolla/*",
+                    "log_file": ".*rabbit.*",
+                    "splitter": "\n\n|^\n"
+                }
+            }
+        }
+    }
+}
