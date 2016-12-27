@@ -47,8 +47,10 @@ const (
 
 // Logs collector implementation used for testing
 type Logs struct {
-	logFiles []string
-	config   map[string]ctypes.ConfigValue
+	logFiles        []string
+	logFilesScanned bool
+	config          map[string]ctypes.ConfigValue
+	scanningCounter int
 }
 
 // LogTypes is a map with predefined regexp separators for different log types
@@ -56,7 +58,7 @@ var logTypes = map[string]string{"apache": "\n", "rabbit": "^\n|\n\n"}
 
 // positionCache is log file seek position in bytes
 type positionCache struct {
-	Position int64 `json:"position,omitempty"`
+	Offset int64 `json:"offset,omitempty"`
 }
 
 // CollectMetrics collects metrics for testing
@@ -67,7 +69,12 @@ func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 	if err := l.loadConfig(mts[0].Config().Table()); err != nil {
 		return nil, err
 	}
-	l.refreshLogList()
+	if l.scanningCounter <= 0 || !l.logFilesScanned {
+		l.scanningCounter = l.config["scanning_dir_counter"].(ctypes.ConfigValueInt).Value
+		l.refreshLogList()
+	} else {
+		l.scanningCounter--
+	}
 	metrics := []plugin.MetricType{}
 
 	// Move to last known file position
@@ -93,7 +100,7 @@ func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 			}
 		}
 
-		if _, err := logFile.Seek(positionCache.Position, os.SEEK_SET); err != nil {
+		if _, err := logFile.Seek(positionCache.Offset, os.SEEK_SET); err != nil {
 			return nil, err
 		}
 
@@ -121,7 +128,7 @@ func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 
 				// Clear log entry buffer and save current file position
 				logEntry = ""
-				positionCache.Position, _ = logFile.Seek(0, os.SEEK_CUR)
+				positionCache.Offset, _ = logFile.Seek(0, os.SEEK_CUR)
 
 				if len(data) > 0 {
 					mt := plugin.MetricType{
@@ -260,6 +267,7 @@ func (l *Logs) refreshLogList() {
 	for _, path := range allPaths {
 		filterFiles(path, fmt.Sprintf("^%s$", logFile), &l.logFiles)
 	}
+	l.logFilesScanned = true
 }
 
 // Load config values
