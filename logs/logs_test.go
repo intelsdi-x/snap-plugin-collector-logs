@@ -310,6 +310,7 @@ func TestCollectMetrics(t *testing.T) {
 	cfgApache.AddItem("cache_dir", ctypes.ConfigValueStr{Value: "logcache"})
 	cfgApache.AddItem("metric_name", ctypes.ConfigValueStr{Value: "nova"})
 	cfgApache.AddItem("collection_time", ctypes.ConfigValueInt{Value: 300})
+	cfgApache.AddItem("scanning_dir_counter", ctypes.ConfigValueInt{Value: 0})
 
 	cfgRabbit := plugin.NewPluginConfigType()
 	cfgRabbit.AddItem("log_dir", ctypes.ConfigValueStr{Value: "logdir"})
@@ -318,6 +319,7 @@ func TestCollectMetrics(t *testing.T) {
 	cfgRabbit.AddItem("cache_dir", ctypes.ConfigValueStr{Value: "logcache"})
 	cfgRabbit.AddItem("metric_name", ctypes.ConfigValueStr{Value: "rabbitmq"})
 	cfgRabbit.AddItem("collection_time", ctypes.ConfigValueInt{Value: 300})
+	cfgRabbit.AddItem("scanning_dir_counter", ctypes.ConfigValueInt{Value: 3})
 
 	mtsApache := []plugin.MetricType{
 		plugin.MetricType{
@@ -335,7 +337,7 @@ func TestCollectMetrics(t *testing.T) {
 	Convey("should not panic", t, func() {
 		So(func() {
 			l := Logs{}
-			l.CollectMetrics([]plugin.MetricType{})
+			l.CollectMetrics(append(mtsApache, mtsRabbit...))
 		}, ShouldNotPanic)
 	})
 
@@ -364,7 +366,12 @@ func TestCollectMetrics(t *testing.T) {
 		So(err, ShouldBeNil)
 		err = json.Unmarshal(posData, &positionCache)
 		So(err, ShouldBeNil)
-		So(positionCache.Position, ShouldEqual, 2193)
+		So(positionCache.Offset, ShouldEqual, 2193)
+
+		// Should refresh log files list after each collection cycle
+		os.Remove("logdir/testapache.log")
+		l.CollectMetrics(mtsApache)
+		So(l.logFiles, ShouldBeEmpty)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Rabbit)", t, func() {
@@ -386,11 +393,20 @@ func TestCollectMetrics(t *testing.T) {
 		So(err, ShouldBeNil)
 		err = json.Unmarshal(posData, &positionCache)
 		So(err, ShouldBeNil)
-		So(positionCache.Position, ShouldEqual, 1897)
+		So(positionCache.Offset, ShouldEqual, 1897)
+
+		// Should refresh log files list after 3 collection cycles
+		os.Remove("logdir/testrabbit.log")
+		l.CollectMetrics(mtsRabbit)
+		So(l.logFiles, ShouldNotBeEmpty)
+		l.CollectMetrics(mtsRabbit)
+		So(l.logFiles, ShouldNotBeEmpty)
+		l.CollectMetrics(mtsRabbit)
+		So(l.logFiles, ShouldNotBeEmpty)
+		l.CollectMetrics(mtsRabbit)
+		So(l.logFiles, ShouldBeEmpty) // <- 4th collection - list should be updated now
 	})
 
-	os.Remove("logdir/testapache.log")
-	os.Remove("logdir/testrabbit.log")
 	os.Remove("logdir")
 	os.Remove("logcache/nova_testapache.log.json")
 	os.Remove("logcache/rabbitmq_testrabbit.log.json")
