@@ -2,7 +2,7 @@
 http://www.apache.org/licenses/LICENSE-2.0.txt
 
 
-Copyright 2015 Intel Corporation
+Copyright 2016 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,9 +25,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/intelsdi-x/snap/control/plugin"
-	"github.com/intelsdi-x/snap/core"
-	"github.com/intelsdi-x/snap/core/ctypes"
+	"github.com/intelsdi-x/snap-plugin-lib-go/v1/plugin"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -175,12 +173,11 @@ func TestFilterFiles(t *testing.T) {
 	os.OpenFile("testdir/testfile3", os.O_CREATE, 0644)
 
 	Convey("should not panic", t, func() {
-		So(func() { filterFiles(".", "", &[]string{}) }, ShouldNotPanic)
+		So(func() { filterFiles(".", "") }, ShouldNotPanic)
 	})
 
 	Convey("should list only matching files", t, func() {
-		list := []string{}
-		filterFiles("testdir", ".*2|3", &list)
+		list := filterFiles("testdir", ".*2|3")
 		So(list, ShouldResemble, []string{"testdir/testfile2", "testdir/testfile3"})
 	})
 
@@ -191,24 +188,79 @@ func TestFilterFiles(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	cfg := plugin.NewPluginConfigType()
-	cfg.AddItem("log_dir", ctypes.ConfigValueStr{Value: "logdir"})
-	cfg.AddItem("log_file", ctypes.ConfigValueStr{Value: "testfile"})
-	cfg.AddItem("log_type", ctypes.ConfigValueStr{Value: "apache"})
+	cfg := make(plugin.Config)
+	cfg["metric_name"] = "all"
+	cfg["log_dir"] = "/var/log"
+	cfg["log_file"] = ".*"
+	cfg["splitter_type"] = "new-line"
+	cfg["splitter"] = splitterTypes["apache"]
+	cfg["cache_dir"] = "/var/cache/snap"
+	cfg["scanning_dir_counter"] = int64(2)
+	cfg["collection_time"] = int64(321)
+
+	cfgBad1 := make(plugin.Config)
+	cfgBad1["splitter_type"] = "new-line"
+	cfgBad1["collection_time"] = "abcd"
+
+	cfgBad2 := make(plugin.Config)
+	cfgBad2["splitter_type"] = "abcd"
+	cfgBad2["collection_time"] = "300ms"
+
+	cfgBad3 := make(plugin.Config)
+	cfgBad3["splitter_type"] = "custom"
+	cfgBad3["splitter"] = "bad(splitter"
+	cfgBad3["collection_time"] = "300ms"
+
+	cfgBad4 := make(plugin.Config)
+	cfgBad4["splitter_type"] = "new-line"
+	cfgBad4["collection_time"] = "300ms"
+	cfgBad4["log_file"] = "log(file"
 
 	Convey("should not panic", t, func() {
 		So(func() {
 			l := Logs{}
-			l.loadConfig(cfg.Table())
+			l.loadConfig(cfg)
 		}, ShouldNotPanic)
 	})
 
 	Convey("should load config properly", t, func() {
 		l := Logs{}
-		l.loadConfig(cfg.Table())
+		l.loadConfig(cfg)
 
-		So(len(l.config), ShouldEqual, len(cfg.Table()))
-		So(l.config, ShouldResemble, cfg.Table())
+		So(len(l.configInt), ShouldEqual, 2)
+		So(len(l.configStr), ShouldEqual, 6)
+	})
+
+	Convey("should return error on invalid collection_time value", t, func() {
+		l := Logs{}
+		err := l.loadConfig(cfgBad1)
+
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldResemble, "collection time value (collection_time) is invalid")
+	})
+
+	Convey("should return error on invalid splitter_type value", t, func() {
+		l := Logs{}
+		err := l.loadConfig(cfgBad2)
+
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldResemble, "splitter type \"abcd\" is not supported")
+	})
+
+	Convey("should return error on invalid splitter value", t, func() {
+		l := Logs{}
+		err := l.loadConfig(cfgBad3)
+
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldResemble, "splitter value is invalid")
+	})
+
+	Convey("should return error on invalid log_file value", t, func() {
+		l := Logs{}
+		err := l.loadConfig(cfgBad4)
+
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldResemble, "log_file value is invalid")
 	})
 }
 
@@ -226,16 +278,16 @@ func TestRefreshLogList(t *testing.T) {
 	os.OpenFile("logdirc/testfile2", os.O_CREATE, 0644)
 	os.OpenFile("logdirc/testfile3", os.O_CREATE, 0644)
 
-	cfg := plugin.NewPluginConfigType()
-	cfg.AddItem("log_dir", ctypes.ConfigValueStr{Value: "./(*dira|*dirb)"})
-	cfg.AddItem("log_file", ctypes.ConfigValueStr{Value: ".*file(2|3)"})
-	cfg.AddItem("log_type", ctypes.ConfigValueStr{Value: "apache"})
+	cfg := make(plugin.Config)
+	cfg["log_dir"] = "./(*dira|*dirb)"
+	cfg["log_file"] = ".*file(2|3)"
+	cfg["splitter_type"] = "new-line"
 
 	Convey("should not panic", t, func() {
 		So(
 			func() {
 				l := Logs{}
-				l.loadConfig(cfg.Table())
+				l.loadConfig(cfg)
 				l.refreshLogList()
 			},
 			ShouldNotPanic)
@@ -243,9 +295,9 @@ func TestRefreshLogList(t *testing.T) {
 
 	Convey("should list only matching logs", t, func() {
 		l := Logs{}
-		l.loadConfig(cfg.Table())
+		l.loadConfig(cfg)
 		l.refreshLogList()
-		So(l.logFiles, ShouldResemble, []string{"logdira/testfile2", "logdira/testfile3", "logdirb/testfile2", "logdirb/testfile3"})
+		So(logFiles, ShouldResemble, []string{"logdira/testfile2", "logdira/testfile3", "logdirb/testfile2", "logdirb/testfile3"})
 	})
 
 	os.Remove("logdira/testfile1")
@@ -263,10 +315,11 @@ func TestRefreshLogList(t *testing.T) {
 }
 
 func TestGetMetricTypes(t *testing.T) {
-	cfg := plugin.NewPluginConfigType()
-	cfg.AddItem("log_dir", ctypes.ConfigValueStr{Value: "logdir"})
-	cfg.AddItem("log_file", ctypes.ConfigValueStr{Value: "testfile"})
-	cfg.AddItem("log_type", ctypes.ConfigValueStr{Value: "apache"})
+	cfg := make(plugin.Config)
+	cfg["log_dir"] = "logdir"
+	cfg["log_file"] = "testfile"
+	cfg["splitter_type"] = "new-line"
+	cfg["collection_time"] = "300ms"
 
 	Convey("should not panic", t, func() {
 		So(func() {
@@ -281,7 +334,7 @@ func TestGetMetricTypes(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(mt, ShouldNotBeEmpty)
 		So(len(mt), ShouldEqual, 1)
-		So(mt[0].Namespace().Strings(), ShouldResemble, []string{"intel", "logs", "*", "*", "message"})
+		So(mt[0].Namespace.Strings(), ShouldResemble, []string{"intel", "logs", "*", "*", "message"})
 	})
 }
 
@@ -303,34 +356,34 @@ func TestCollectMetrics(t *testing.T) {
 		file.Close()
 	}
 
-	cfgApache := plugin.NewPluginConfigType()
-	cfgApache.AddItem("log_dir", ctypes.ConfigValueStr{Value: "logdir"})
-	cfgApache.AddItem("log_file", ctypes.ConfigValueStr{Value: "testapache.log"})
-	cfgApache.AddItem("log_type", ctypes.ConfigValueStr{Value: "apache"})
-	cfgApache.AddItem("cache_dir", ctypes.ConfigValueStr{Value: "logcache"})
-	cfgApache.AddItem("metric_name", ctypes.ConfigValueStr{Value: "nova"})
-	cfgApache.AddItem("collection_time", ctypes.ConfigValueInt{Value: 300})
-	cfgApache.AddItem("scanning_dir_counter", ctypes.ConfigValueInt{Value: 0})
+	cfgApache := make(plugin.Config)
+	cfgApache["log_dir"] = "logdir"
+	cfgApache["log_file"] = "testapache.log"
+	cfgApache["splitter_type"] = "new-line"
+	cfgApache["cache_dir"] = "logcache"
+	cfgApache["metric_name"] = "nova"
+	cfgApache["collection_time"] = "300ms"
+	cfgApache["scanning_dir_counter"] = int64(0)
 
-	cfgRabbit := plugin.NewPluginConfigType()
-	cfgRabbit.AddItem("log_dir", ctypes.ConfigValueStr{Value: "logdir"})
-	cfgRabbit.AddItem("log_file", ctypes.ConfigValueStr{Value: "testrabbit.log"})
-	cfgRabbit.AddItem("log_type", ctypes.ConfigValueStr{Value: "rabbit"})
-	cfgRabbit.AddItem("cache_dir", ctypes.ConfigValueStr{Value: "logcache"})
-	cfgRabbit.AddItem("metric_name", ctypes.ConfigValueStr{Value: "rabbitmq"})
-	cfgRabbit.AddItem("collection_time", ctypes.ConfigValueInt{Value: 300})
-	cfgRabbit.AddItem("scanning_dir_counter", ctypes.ConfigValueInt{Value: 3})
+	cfgRabbit := make(plugin.Config)
+	cfgRabbit["log_dir"] = "logdir"
+	cfgRabbit["log_file"] = "testrabbit.log"
+	cfgRabbit["splitter_type"] = "empty-line"
+	cfgRabbit["cache_dir"] = "logcache"
+	cfgRabbit["metric_name"] = "rabbitmq"
+	cfgRabbit["collection_time"] = "300ms"
+	cfgRabbit["scanning_dir_counter"] = int64(3)
 
-	mtsApache := []plugin.MetricType{
-		plugin.MetricType{
-			Namespace_: core.NewNamespace("intel", "logs", "nova", "testapache.log", "message"),
-			Config_:    cfgApache.ConfigDataNode,
+	mtsApache := []plugin.Metric{
+		plugin.Metric{
+			Namespace: plugin.NewNamespace("intel", "logs", "nova", "testapache.log", "message"),
+			Config:    cfgApache,
 		},
 	}
-	mtsRabbit := []plugin.MetricType{
-		plugin.MetricType{
-			Namespace_: core.NewNamespace("intel", "logs", "rabbitmq", "testrabbit.log", "message"),
-			Config_:    cfgRabbit.ConfigDataNode,
+	mtsRabbit := []plugin.Metric{
+		plugin.Metric{
+			Namespace: plugin.NewNamespace("intel", "logs", "rabbitmq", "testrabbit.log", "message"),
+			Config:    cfgRabbit,
 		},
 	}
 
@@ -339,12 +392,6 @@ func TestCollectMetrics(t *testing.T) {
 			l := Logs{}
 			l.CollectMetrics(append(mtsApache, mtsRabbit...))
 		}, ShouldNotPanic)
-	})
-
-	Convey("should return error with empty metric list", t, func() {
-		l := Logs{}
-		_, err := l.CollectMetrics([]plugin.MetricType{})
-		So(err, ShouldNotBeNil)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Apache)", t, func() {
@@ -357,7 +404,7 @@ func TestCollectMetrics(t *testing.T) {
 
 		allData := ""
 		for _, v := range m {
-			allData += v.Data().(string) + "\n"
+			allData += v.Data.(string) + "\n"
 		}
 		So(allData, ShouldEqual, logFileContentApache)
 
@@ -371,7 +418,7 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapache.log")
 		l.CollectMetrics(mtsApache)
-		So(l.logFiles, ShouldBeEmpty)
+		So(logFiles, ShouldBeEmpty)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Rabbit)", t, func() {
@@ -384,7 +431,7 @@ func TestCollectMetrics(t *testing.T) {
 
 		allData := ""
 		for _, v := range m {
-			allData += "\n" + v.Data().(string) + "\n"
+			allData += "\n" + v.Data.(string) + "\n"
 		}
 		So(allData, ShouldEqual, logFileContentRabbit)
 
@@ -398,15 +445,17 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after 3 collection cycles
 		os.Remove("logdir/testrabbit.log")
 		l.CollectMetrics(mtsRabbit)
-		So(l.logFiles, ShouldNotBeEmpty)
+		So(logFiles, ShouldNotBeEmpty)
 		l.CollectMetrics(mtsRabbit)
-		So(l.logFiles, ShouldNotBeEmpty)
+		So(logFiles, ShouldNotBeEmpty)
 		l.CollectMetrics(mtsRabbit)
-		So(l.logFiles, ShouldNotBeEmpty)
+		So(logFiles, ShouldNotBeEmpty)
 		l.CollectMetrics(mtsRabbit)
-		So(l.logFiles, ShouldBeEmpty) // <- 4th collection - list should be updated now
+		So(logFiles, ShouldBeEmpty) // <- 4th collection - list should be updated now
 	})
 
+	os.Remove("logdir/testapache.log")
+	os.Remove("logdir/testrabbit.log")
 	os.Remove("logdir")
 	os.Remove("logcache/nova_testapache.log.json")
 	os.Remove("logcache/rabbitmq_testrabbit.log.json")

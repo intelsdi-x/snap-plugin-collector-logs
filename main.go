@@ -2,7 +2,7 @@
 http://www.apache.org/licenses/LICENSE-2.0.txt
 
 
-Copyright 2015 Intel Corporation
+Copyright 2016 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,18 +20,14 @@ limitations under the License.
 package main
 
 import (
-	"os"
 
 	// Import the snap plugin library
-	"github.com/intelsdi-x/snap/control/plugin"
+	"github.com/intelsdi-x/snap-plugin-lib-go/v1/plugin"
 	// Import logs collector plugin implementation
 	"github.com/intelsdi-x/snap-plugin-collector-logs/logs"
 )
 
 func main() {
-	// Define metadata about Plugin
-	meta := logs.Meta()
-
 	// Start a collector
-	plugin.Start(meta, new(logs.Logs), os.Args[1])
+	plugin.StartCollector(logs.Logs{}, logs.Name, logs.Version, plugin.RoutingStrategy(plugin.StickyRouter))
 }

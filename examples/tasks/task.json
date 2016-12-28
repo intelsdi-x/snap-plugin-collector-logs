@@ -15,7 +15,7 @@
                     "cache_dir": "/home/test/cache/snap",
                     "log_dir": "/home/test/kolla/*",
                     "log_file": ".*rabbit.*",
-                    "log_type": "rabbit"
+                    "splitter_type": "empty-line"
                 }
             },
             "publish": [

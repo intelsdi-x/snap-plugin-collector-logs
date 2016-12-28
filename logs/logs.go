@@ -2,7 +2,7 @@
 http://www.apache.org/licenses/LICENSE-2.0.txt
 
 
-Copyright 2015 Intel Corporation
+Copyright 2016 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,10 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intelsdi-x/snap/control/plugin"
-	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
-	"github.com/intelsdi-x/snap/core"
-	"github.com/intelsdi-x/snap/core/ctypes"
+	"github.com/Sirupsen/logrus"
+	"github.com/intelsdi-x/snap-plugin-lib-go/v1/plugin"
 )
 
 const (
@@ -41,20 +39,23 @@ const (
 	Name = "logs"
 	// Version of plugin
 	Version = 1
-	// Type of plugin
-	Type = plugin.CollectorPluginType
 )
 
 // Logs collector implementation used for testing
 type Logs struct {
-	logFiles        []string
-	logFilesScanned bool
-	config          map[string]ctypes.ConfigValue
-	scanningCounter int
+	configStr map[string]string
+	configInt map[string]int64
 }
 
-// LogTypes is a map with predefined regexp separators for different log types
-var logTypes = map[string]string{"apache": "\n", "rabbit": "^\n|\n\n"}
+// Log files list related variables that should persist between CollectMetrics calls
+var (
+	logFiles        []string
+	logFilesScanned bool
+	scanningCounter int64
+)
+
+// splitterTypes is a map with predefined regexp separators for different log types
+var splitterTypes = map[string]string{"new-line": "\n", "empty-line": "^\n|\n\n"}
 
 // positionCache is log file seek position in bytes
 type positionCache struct {
@@ -62,51 +63,47 @@ type positionCache struct {
 }
 
 // CollectMetrics collects metrics for testing
-func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, error) {
-	if len(mts) == 0 {
-		return nil, fmt.Errorf("no metrics to collect")
-	}
-	if err := l.loadConfig(mts[0].Config().Table()); err != nil {
+func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
+	if err := l.loadConfig(mts[0].Config); err != nil {
 		return nil, err
 	}
-	if l.scanningCounter <= 0 || !l.logFilesScanned {
-		l.scanningCounter = l.config["scanning_dir_counter"].(ctypes.ConfigValueInt).Value
-		l.refreshLogList()
-	} else {
-		l.scanningCounter--
-	}
-	metrics := []plugin.MetricType{}
+	l.refreshLogList()
+	metrics := []plugin.Metric{}
 
 	// Move to last known file position
-	for _, logFilePath := range l.logFiles {
+	for _, logFilePath := range logFiles {
 		_, logFileName := filepath.Split(logFilePath)
 
 		// Load log file
 		logFile, err := os.OpenFile(logFilePath, os.O_RDONLY, 0)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error while opening log file: %s\n", err)
+			logrus.WithField("filename", logFilePath).Error("Error while opening log file")
 		}
 
 		buffer := make([]byte, 1)
 		logEntry := ""
 
 		// Go to last log file position
-		posFilePath := filepath.Join(l.config["cache_dir"].(ctypes.ConfigValueStr).Value, l.config["metric_name"].(ctypes.ConfigValueStr).Value+"_"+logFileName+".json")
+		posFilePath := filepath.Join(l.configStr["cache_dir"], fmt.Sprintf("%s_%s.json", l.configStr["metric_name"], logFileName))
 		positionCache := positionCache{}
 		posData, err := ioutil.ReadFile(posFilePath)
-		if err == nil {
+		if err != nil {
+			logrus.WithFields(logrus.Fields{"filename": posFilePath, "error": err}).Warning("Cannot read log offset cache file. This warning may appear when new log file found.")
+		} else {
 			if err := json.Unmarshal(posData, &positionCache); err != nil {
-				return nil, err
+				logrus.WithFields(logrus.Fields{"filename": posFilePath, "error": err}).Error("Cannot parse log offset cache file")
 			}
 		}
-
 		if _, err := logFile.Seek(positionCache.Offset, os.SEEK_SET); err != nil {
 			return nil, err
 		}
 
 		// Set collection time limit
 		collectStart := time.Now()
-		collectionTime := time.Duration(l.config["collection_time"].(ctypes.ConfigValueInt).Value) * time.Millisecond
+		collectionTime, err := time.ParseDuration(l.configStr["collection_time"])
+		if err != nil {
+			return nil, fmt.Errorf("collection time value (collection_time) is invalid")
+		}
 
 		// Collect as many data as it is possible during configured collection time limit
 		for time.Since(collectStart) < collectionTime {
@@ -121,20 +118,26 @@ func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 			}
 
 			// Return log metric if splitter appeared or end of file reached
-			splitter := regexp.MustCompile(l.config["splitter"].(ctypes.ConfigValueStr).Value)
+			splitter, err := regexp.Compile(l.configStr["splitter"])
+			if err != nil {
+				return nil, fmt.Errorf("splitter value is invalid")
+			}
 			if splitter.MatchString(logEntry) || (logFileErr == io.EOF && len(logEntry) > 0) {
 				// Remove splitter string and trim whitespaces
 				data := strings.TrimSpace(splitter.ReplaceAllString(logEntry, ""))
 
 				// Clear log entry buffer and save current file position
 				logEntry = ""
-				positionCache.Offset, _ = logFile.Seek(0, os.SEEK_CUR)
+				if positionCache.Offset, err = logFile.Seek(0, os.SEEK_CUR); err != nil {
+					logrus.WithField("filename", logFilePath).Error("Cannot get current offset in log file")
+				}
 
 				if len(data) > 0 {
-					mt := plugin.MetricType{
-						Data_:      data,
-						Namespace_: core.NewNamespace("intel", Name, l.config["metric_name"].(ctypes.ConfigValueStr).Value, logFileName, "message"),
-						Timestamp_: time.Now(),
+					mt := plugin.Metric{
+						Data:      data,
+						Namespace: plugin.NewNamespace("intel", Name, l.configStr["metric_name"], logFileName, "message"),
+						Timestamp: time.Now(),
+						Version:   Version,
 					}
 					metrics = append(metrics, mt)
 				}
@@ -147,8 +150,13 @@ func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 		logFile.Close()
 
 		if len(metrics) > 0 {
-			posData, _ := json.Marshal(positionCache)
-			ioutil.WriteFile(posFilePath, posData, 0644)
+			posData, err := json.Marshal(positionCache)
+			if err != nil {
+				logrus.WithField("error", err).Error("Cannot marshal offset cache JSON data")
+			}
+			if err := ioutil.WriteFile(posFilePath, posData, 0644); err != nil {
+				logrus.WithField("filename", logFilePath).Error("Cannot save log offset cache file")
+			}
 		}
 	}
 
@@ -156,49 +164,34 @@ func (l *Logs) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 }
 
 //GetMetricTypes returns metric types for testing
-func (l *Logs) GetMetricTypes(cfg plugin.ConfigType) ([]plugin.MetricType, error) {
-	if err := l.loadConfig(cfg.Table()); err != nil {
+func (l Logs) GetMetricTypes(cfg plugin.Config) ([]plugin.Metric, error) {
+	if err := l.loadConfig(cfg); err != nil {
 		return nil, err
 	}
 
-	mts := []plugin.MetricType{}
-	mts = append(mts, plugin.MetricType{
-		Namespace_:   core.NewNamespace("intel", Name).AddDynamicElement("metric_name", "Metric name defined in config file").AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
-		Description_: "Single log message",
-		Unit_:        "string",
+	mts := []plugin.Metric{}
+	mts = append(mts, plugin.Metric{
+		Namespace:   plugin.NewNamespace("intel", Name).AddDynamicElement("metric_name", "Metric name defined in config file").AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
+		Description: "Single log message",
+		Unit:        "string",
+		Version:     Version,
 	})
 
 	return mts, nil
 }
 
 //GetConfigPolicy returns a ConfigPolicy for testing
-func (l *Logs) GetConfigPolicy() (*cpolicy.ConfigPolicy, error) {
-	c := cpolicy.New()
-	rule1, _ := cpolicy.NewStringRule("metric_name", false, "all")
-	rule2, _ := cpolicy.NewStringRule("log_dir", false, "/var/log")
-	rule3, _ := cpolicy.NewStringRule("log_file", false, ".*")
-	rule4, _ := cpolicy.NewStringRule("log_type", false, "apache")
-	rule5, _ := cpolicy.NewStringRule("splitter", false, logTypes["apache"])
-	rule6, _ := cpolicy.NewStringRule("cache_dir", false, "/var/cache/snap")
-	rule7, _ := cpolicy.NewIntegerRule("scanning_dir_counter", false, 0)
-	rule8, _ := cpolicy.NewIntegerRule("collection_time", false, 300)
-	p := cpolicy.NewPolicyNode()
-	p.Add(rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8)
-	c.Add([]string{"intel", "logs"}, p)
-	return c, nil
-}
-
-//Meta returns meta data for testing
-func Meta() *plugin.PluginMeta {
-	return plugin.NewPluginMeta(
-		Name,
-		Version,
-		Type,
-		[]string{plugin.SnapGOBContentType},
-		[]string{plugin.SnapGOBContentType},
-		plugin.CacheTTL(100*time.Millisecond),
-		plugin.RoutingStrategy(plugin.StickyRouting),
-	)
+func (l Logs) GetConfigPolicy() (plugin.ConfigPolicy, error) {
+	policy := plugin.NewConfigPolicy()
+	policy.AddNewStringRule([]string{"intel", Name}, "metric_name", false, plugin.SetDefaultString("all"))
+	policy.AddNewStringRule([]string{"intel", Name}, "log_dir", false, plugin.SetDefaultString("/var/log"))
+	policy.AddNewStringRule([]string{"intel", Name}, "log_file", false, plugin.SetDefaultString(".*"))
+	policy.AddNewStringRule([]string{"intel", Name}, "splitter_type", false, plugin.SetDefaultString("new-line"))
+	policy.AddNewStringRule([]string{"intel", Name}, "splitter", false, plugin.SetDefaultString(splitterTypes["new-line"]))
+	policy.AddNewStringRule([]string{"intel", Name}, "cache_dir", false, plugin.SetDefaultString("/var/cache/snap"))
+	policy.AddNewStringRule([]string{"intel", Name}, "collection_time", false, plugin.SetDefaultString("300ms"))
+	policy.AddNewIntRule([]string{"intel", Name}, "scanning_dir_counter", false, plugin.SetDefaultInt(0))
+	return *policy, nil
 }
 
 // isDir returns true if specified path is dir and false otherwise
@@ -238,55 +231,85 @@ func expandPaths(pattern string, collected *[]string) {
 }
 
 // List all files that matches the specified regexp
-func filterFiles(path string, filePattern string, collected *[]string) {
+func filterFiles(path string, filePattern string) []string {
 	// Read dir contents
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot access %s! Log file list generation failed.\n", path)
-		return
+		logrus.WithField("path", path).Error("Cannot access path! Log file list generation failed.")
+		return []string{}
 	}
 
 	// Filter files inside dir
-	fp := regexp.MustCompile(filePattern)
+	fp, err := regexp.Compile(filePattern)
+	if err != nil {
+		logrus.WithField("error", err).Error("File pattern must be valid regular expression!")
+		return []string{}
+	}
+	result := []string{}
 	for _, file := range files {
 		if !file.IsDir() && fp.MatchString(file.Name()) {
-			*collected = append(*collected, filepath.Join(path, file.Name()))
+			result = append(result, filepath.Join(path, file.Name()))
 		}
 	}
+	return result
 }
 
 // Initialize plugin configuration
 func (l *Logs) refreshLogList() {
-	logDir := l.config["log_dir"].(ctypes.ConfigValueStr).Value
-	logFile := l.config["log_file"].(ctypes.ConfigValueStr).Value
+	if scanningCounter <= 0 || !logFilesScanned {
+		scanningCounter = l.configInt["scanning_dir_counter"]
 
-	allPaths := []string{}
-	expandPaths(logDir, &allPaths)
+		logDir := l.configStr["log_dir"]
+		logFile := l.configStr["log_file"]
 
-	l.logFiles = []string{}
-	for _, path := range allPaths {
-		filterFiles(path, fmt.Sprintf("^%s$", logFile), &l.logFiles)
+		allPaths := []string{}
+		expandPaths(logDir, &allPaths)
+
+		logFiles = []string{}
+		for _, path := range allPaths {
+			logFiles = append(logFiles, filterFiles(path, fmt.Sprintf("^%s$", logFile))...)
+		}
+		logFilesScanned = true
+	} else {
+		scanningCounter--
 	}
-	l.logFilesScanned = true
 }
 
 // Load config values
-func (l *Logs) loadConfig(cfg map[string]ctypes.ConfigValue) error {
-	if l.config == nil {
-		l.config = cfg
+func (l *Logs) loadConfig(cfg plugin.Config) error {
+	l.configStr = make(map[string]string)
+	l.configInt = make(map[string]int64)
 
-		// Configure splitter for selected preset
-		if !strings.EqualFold(l.config["log_type"].(ctypes.ConfigValueStr).Value, "custom") {
-			key := strings.ToLower(l.config["log_type"].(ctypes.ConfigValueStr).Value)
-			if val, ok := logTypes[key]; ok {
-				l.config["splitter"] = ctypes.ConfigValueStr{Value: val}
-			} else {
-				return fmt.Errorf("log type \"%s\" is not supported", key)
-			}
+	for key := range cfg {
+		if val, err := cfg.GetInt(key); err == nil {
+			l.configInt[key] = val
 		}
-		if len(l.config["splitter"].(ctypes.ConfigValueStr).Value) == 0 {
-			return fmt.Errorf("please configure \"splitter\" option in your task manifest")
+		if val, err := cfg.GetString(key); err == nil {
+			l.configStr[key] = val
 		}
 	}
+
+	// Configure splitter for selected preset
+	if !strings.EqualFold(l.configStr["splitter_type"], "custom") {
+		key := strings.ToLower(l.configStr["splitter_type"])
+		if val, ok := splitterTypes[key]; ok {
+			l.configStr["splitter"] = val
+		} else {
+			return fmt.Errorf("splitter type \"%s\" is not supported", key)
+		}
+	}
+	if len(l.configStr["splitter"]) == 0 {
+		return fmt.Errorf("please configure \"splitter\" option in your task manifest")
+	}
+	if _, err := regexp.Compile(l.configStr["splitter"]); err != nil {
+		return fmt.Errorf("splitter value is invalid")
+	}
+	if _, err := regexp.Compile(l.configStr["log_file"]); err != nil {
+		return fmt.Errorf("log_file value is invalid")
+	}
+	if _, err := time.ParseDuration(l.configStr["collection_time"]); err != nil {
+		return fmt.Errorf("collection time value (collection_time) is invalid")
+	}
+
 	return nil
 }
