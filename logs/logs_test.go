@@ -376,16 +376,23 @@ func TestCollectMetrics(t *testing.T) {
 
 	mtsApache := []plugin.Metric{
 		plugin.Metric{
-			Namespace: plugin.NewNamespace("intel", "logs", "nova", "testapache.log", "message"),
-			Config:    cfgApache,
+			Namespace: plugin.NewNamespace("intel", "logs").AddDynamicElement("metric_name", "Metric name defined in config file").
+				AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
+			Config: cfgApache,
 		},
 	}
+	mtsApache[0].Namespace[2].Value = "nova"
+	mtsApache[0].Namespace[3].Value = "testapache.log"
+
 	mtsRabbit := []plugin.Metric{
 		plugin.Metric{
-			Namespace: plugin.NewNamespace("intel", "logs", "rabbitmq", "testrabbit.log", "message"),
-			Config:    cfgRabbit,
+			Namespace: plugin.NewNamespace("intel", "logs").AddDynamicElement("metric_name", "Metric name defined in config file").
+				AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
+			Config: cfgRabbit,
 		},
 	}
+	mtsRabbit[0].Namespace[2].Value = "rabbitmq"
+	mtsRabbit[0].Namespace[3].Value = "testrabbit.log"
 
 	Convey("should not panic", t, func() {
 		So(func() {
@@ -404,6 +411,11 @@ func TestCollectMetrics(t *testing.T) {
 
 		allData := ""
 		for _, v := range m {
+			So(v.Namespace[2].IsDynamic(), ShouldBeTrue)
+			So(v.Namespace[2].Description, ShouldEqual, "Metric name defined in config file")
+			So(v.Namespace[3].IsDynamic(), ShouldBeTrue)
+			So(v.Namespace[3].Description, ShouldEqual, "Log file name")
+			So(v.Namespace[4].IsDynamic(), ShouldBeFalse)
 			allData += v.Data.(string) + "\n"
 		}
 		So(allData, ShouldEqual, logFileContentApache)
@@ -431,6 +443,11 @@ func TestCollectMetrics(t *testing.T) {
 
 		allData := ""
 		for _, v := range m {
+			So(v.Namespace[2].IsDynamic(), ShouldBeTrue)
+			So(v.Namespace[2].Description, ShouldEqual, "Metric name defined in config file")
+			So(v.Namespace[3].IsDynamic(), ShouldBeTrue)
+			So(v.Namespace[3].Description, ShouldEqual, "Log file name")
+			So(v.Namespace[4].IsDynamic(), ShouldBeFalse)
 			allData += "\n" + v.Data.(string) + "\n"
 		}
 		So(allData, ShouldEqual, logFileContentRabbit)

@@ -135,10 +135,12 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 				if len(data) > 0 {
 					mt := plugin.Metric{
 						Data:      data,
-						Namespace: plugin.NewNamespace("intel", Name, l.configStr["metric_name"], logFileName, "message"),
+						Namespace: mts[0].Namespace,
 						Timestamp: time.Now(),
 						Version:   Version,
 					}
+					mt.Namespace[2].Value = l.configStr["metric_name"]
+					mt.Namespace[3].Value = logFileName
 					metrics = append(metrics, mt)
 				}
 
