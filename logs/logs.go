@@ -218,13 +218,16 @@ func expandPaths(pattern string, collected *[]string) {
 		if brackets.MatchString(pe) {
 			dirs := separators.Split(brackets.ReplaceAllString(pe, ""), -1)
 			for _, d := range dirs {
-				expandPaths(filepath.Join(append(append(patternElements[:i], d), patternElements[i+1:]...)...), collected)
+				expandPaths(strings.Join(append(append(patternElements[:i], d), patternElements[i+1:]...), string(os.PathSeparator)), collected)
 			}
 			return
 		}
 	}
 
-	expandedPath, _ := filepath.Glob(pattern)
+	expandedPath, err := filepath.Glob(pattern)
+	if err != nil || len(expandedPath) == 0 {
+		logrus.WithFields(logrus.Fields{"path_pattern": pattern, "expanded_path": expandedPath, "error": err}).Error("Cannot expand path, check if path pattern is correct")
+	}
 	for _, path := range expandedPath {
 		if result, err := isDir(path); result && err == nil {
 			*collected = append(*collected, path)
