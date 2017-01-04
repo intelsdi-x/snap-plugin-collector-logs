@@ -11,11 +11,12 @@
             },
             "config": {
                 "/intel/logs": {
-                    "metric_name": "rabbit_logs",
+                    "metric_name": "nova_logs",
                     "cache_dir": "/home/test/cache/snap",
-                    "log_dir": "/home/test/kolla/*",
-                    "log_file": ".*rabbit.*",
-                    "splitter_type": "empty-line"
+                    "log_dir": "/home/test/kolla/(nova|neutron)",
+                    "log_file": ".*",
+                    "splitter_type": "date-time",
+                    "splitter_pos": "before"
                 }
             },
             "publish": [

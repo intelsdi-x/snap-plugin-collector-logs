@@ -46,6 +46,18 @@ const logFileContentApache = `2016-12-06 09:21:08.341 6 INFO oslo_service.servic
 2016-12-07 03:39:17.960 18 INFO nova.wsgi [-] Stopping WSGI server.
 `
 
+const logFileContentApacheMultiline = `2016-12-06 09:21:08.341 6 INFO oslo_service.service [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Starting 5 workers
+2016-12-06 09:21:08.349 6 INFO nova.network.driver [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Loading network driver 'nova.network.linux_net'
+2016-12-06 09:21:08.488 20 INFO nova.osapi_compute.wsgi.server [req-67440a41-6667-4e07-b546-fa336ab5c3af - - - - -] (20) wsgi starting up on http://10.0.0.1:8774
+2016-12-06 09:21:08.493 18 INFO nova.osapi_compute.wsgi.server [req-de1ec4f5-ddb9-4726-b03b-900cd78b03ea - - - - -] (18) wsgi starting up on http://10.0.0.1:8774
+2016-12-06 09:21:08.494 22 INFO nova.osapi_compute.wsgi.server DATA ALSO HERE: 2016-12-06 09:21:08.341 [req-163c5cdb-e764-4838-93f5-8fd56b4942b2 - - - - -] (22) wsgi starting up on http://10.0.0.1:8774
+SOME LOG-RELATED
+LINES
+BETWEEN
+2016-12-06 09:21:08.499 19 INFO nova.osapi_compute.wsgi.server [req-ee7ac782-32aa-492c-aa48-3d84825814e7 - - - - -] (19) wsgi starting up on http://10.0.0.1:8774
+2016-12-06 09:21:08.500 21 INFO nova.osapi_compute.wsgi.server [req-a253f557-bee0-4d13-933c-e690a9a4c69f - - - - -] (21) wsgi starting up on http://10.0.0.1:8774
+`
+
 const logFileContentRabbit = `
 =INFO REPORT==== 7-Dec-2016::03:48:22 ===
 accepting AMQP connection <0.5567.0> (10.0.0.1:40198 -> 10.0.0.1:5672)
@@ -172,12 +184,14 @@ func TestFilterFiles(t *testing.T) {
 	os.OpenFile("testdir/testfile2", os.O_CREATE, 0644)
 	os.OpenFile("testdir/testfile3", os.O_CREATE, 0644)
 
+	mts := makeMetric("*", "*", plugin.Config{})
+
 	Convey("should not panic", t, func() {
-		So(func() { filterFiles(".", "") }, ShouldNotPanic)
+		So(func() { filterFiles("testdir", ".*", mts) }, ShouldNotPanic)
 	})
 
 	Convey("should list only matching files", t, func() {
-		list := filterFiles("testdir", ".*2|3")
+		list := filterFiles("testdir", ".*2|3", mts)
 		So(list, ShouldResemble, []string{"testdir/testfile2", "testdir/testfile3"})
 	})
 
@@ -192,8 +206,7 @@ func TestLoadConfig(t *testing.T) {
 	cfg["metric_name"] = "all"
 	cfg["log_dir"] = "/var/log"
 	cfg["log_file"] = ".*"
-	cfg["splitter_type"] = "new-line"
-	cfg["splitter"] = splitterTypes["apache"]
+	cfg["splitter_type"] = "new-line" // splitter and splitter_length will be set automatically
 	cfg["cache_dir"] = "/var/cache/snap"
 	cfg["scanning_dir_counter"] = int64(2)
 	cfg["collection_time"] = int64(321)
@@ -227,7 +240,7 @@ func TestLoadConfig(t *testing.T) {
 		l := Logs{}
 		l.loadConfig(cfg)
 
-		So(len(l.configInt), ShouldEqual, 2)
+		So(len(l.configInt), ShouldEqual, 3)
 		So(len(l.configStr), ShouldEqual, 6)
 	})
 
@@ -278,26 +291,46 @@ func TestRefreshLogList(t *testing.T) {
 	os.OpenFile("logdirc/testfile2", os.O_CREATE, 0644)
 	os.OpenFile("logdirc/testfile3", os.O_CREATE, 0644)
 
-	cfg := make(plugin.Config)
-	cfg["log_dir"] = "./(*dira|*dirb)"
-	cfg["log_file"] = ".*file(2|3)"
-	cfg["splitter_type"] = "new-line"
-
 	Convey("should not panic", t, func() {
 		So(
 			func() {
+				cfg := make(plugin.Config)
+				cfg["log_dir"] = "."
+				cfg["log_file"] = ".*"
+				cfg["splitter_type"] = "new-line"
+				mts := makeMetric("*", "*", plugin.Config{})
+
 				l := Logs{}
 				l.loadConfig(cfg)
-				l.refreshLogList()
+				l.refreshLogList(mts)
 			},
 			ShouldNotPanic)
 	})
 
-	Convey("should list only matching logs", t, func() {
+	Convey("should list only config matching logs", t, func() {
+		cfg := make(plugin.Config)
+		cfg["log_dir"] = "./(*dira|*dirb)"
+		cfg["log_file"] = ".*file(2|3)"
+		cfg["splitter_type"] = "new-line"
+		mts := makeMetric("*", "*", plugin.Config{})
+
 		l := Logs{}
 		l.loadConfig(cfg)
-		l.refreshLogList()
+		l.refreshLogList(mts)
 		So(logFiles, ShouldResemble, []string{"logdira/testfile2", "logdira/testfile3", "logdirb/testfile2", "logdirb/testfile3"})
+	})
+
+	Convey("should list only logs in namespace log_file entry", t, func() {
+		cfg := make(plugin.Config)
+		cfg["log_dir"] = "./*"
+		cfg["log_file"] = ".*"
+		cfg["splitter_type"] = "new-line"
+		mts := makeMetric("*", "testfile2", plugin.Config{})
+
+		l := Logs{}
+		l.loadConfig(cfg)
+		l.refreshLogList(mts)
+		So(logFiles, ShouldResemble, []string{"logdira/testfile2", "logdirb/testfile2", "logdirc/testfile2"})
 	})
 
 	os.Remove("logdira/testfile1")
@@ -338,6 +371,20 @@ func TestGetMetricTypes(t *testing.T) {
 	})
 }
 
+func makeMetric(metricName string, logName string, cfg plugin.Config) []plugin.Metric {
+	mts := []plugin.Metric{
+		plugin.Metric{
+			Namespace: plugin.NewNamespace("intel", "logs").AddDynamicElement("metric_name", "Metric name defined in config file").
+				AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
+			Config: cfg,
+		},
+	}
+	mts[0].Namespace[2].Value = metricName
+	mts[0].Namespace[3].Value = logName
+
+	return mts
+}
+
 func TestCollectMetrics(t *testing.T) {
 	os.Mkdir("logcache", 0755)
 	os.Mkdir("logdir", 0755)
@@ -346,6 +393,13 @@ func TestCollectMetrics(t *testing.T) {
 		t.Fail()
 	} else {
 		file.WriteString(logFileContentApache)
+		file.Close()
+	}
+	if file, err := os.Create("logdir/testapachemultiline.log"); err != nil {
+		t.Errorf("Test log creation error: %s", err)
+		t.Fail()
+	} else {
+		file.WriteString(logFileContentApacheMultiline)
 		file.Close()
 	}
 	if file, err := os.Create("logdir/testrabbit.log"); err != nil {
@@ -360,44 +414,40 @@ func TestCollectMetrics(t *testing.T) {
 	cfgApache["log_dir"] = "logdir"
 	cfgApache["log_file"] = "testapache.log"
 	cfgApache["splitter_type"] = "new-line"
+	cfgApache["splitter_pos"] = "after"
 	cfgApache["cache_dir"] = "logcache"
 	cfgApache["metric_name"] = "nova"
 	cfgApache["collection_time"] = "300ms"
 	cfgApache["scanning_dir_counter"] = int64(0)
 
+	cfgApacheMultiline := make(plugin.Config)
+	cfgApacheMultiline["log_dir"] = "logdir"
+	cfgApacheMultiline["log_file"] = "testapachemultiline.log"
+	cfgApacheMultiline["splitter_type"] = "date-time"
+	cfgApacheMultiline["splitter_pos"] = "before"
+	cfgApacheMultiline["cache_dir"] = "logcache"
+	cfgApacheMultiline["metric_name"] = "nova"
+	cfgApacheMultiline["collection_time"] = "300ms"
+	cfgApacheMultiline["scanning_dir_counter"] = int64(0)
+
 	cfgRabbit := make(plugin.Config)
 	cfgRabbit["log_dir"] = "logdir"
 	cfgRabbit["log_file"] = "testrabbit.log"
 	cfgRabbit["splitter_type"] = "empty-line"
+	cfgRabbit["splitter_pos"] = "before"
 	cfgRabbit["cache_dir"] = "logcache"
 	cfgRabbit["metric_name"] = "rabbitmq"
 	cfgRabbit["collection_time"] = "300ms"
 	cfgRabbit["scanning_dir_counter"] = int64(3)
 
-	mtsApache := []plugin.Metric{
-		plugin.Metric{
-			Namespace: plugin.NewNamespace("intel", "logs").AddDynamicElement("metric_name", "Metric name defined in config file").
-				AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
-			Config: cfgApache,
-		},
-	}
-	mtsApache[0].Namespace[2].Value = "nova"
-	mtsApache[0].Namespace[3].Value = "testapache.log"
-
-	mtsRabbit := []plugin.Metric{
-		plugin.Metric{
-			Namespace: plugin.NewNamespace("intel", "logs").AddDynamicElement("metric_name", "Metric name defined in config file").
-				AddDynamicElement("log_file", "Log file name").AddStaticElement("message"),
-			Config: cfgRabbit,
-		},
-	}
-	mtsRabbit[0].Namespace[2].Value = "rabbitmq"
-	mtsRabbit[0].Namespace[3].Value = "testrabbit.log"
+	mtsApache := makeMetric("nova", "testapache.log", cfgApache)
+	mtsApacheMultiline := makeMetric("nova", "testapachemultiline.log", cfgApacheMultiline)
+	mtsRabbit := makeMetric("rabbitmq", "testrabbit.log", cfgRabbit)
 
 	Convey("should not panic", t, func() {
 		So(func() {
 			l := Logs{}
-			l.CollectMetrics(append(mtsApache, mtsRabbit...))
+			l.CollectMetrics(append(append(mtsApache, mtsApacheMultiline...), mtsRabbit...))
 		}, ShouldNotPanic)
 	})
 
@@ -416,7 +466,7 @@ func TestCollectMetrics(t *testing.T) {
 			So(v.Namespace[3].IsDynamic(), ShouldBeTrue)
 			So(v.Namespace[3].Description, ShouldEqual, "Log file name")
 			So(v.Namespace[4].IsDynamic(), ShouldBeFalse)
-			allData += v.Data.(string) + "\n"
+			allData += v.Data.(string)
 		}
 		So(allData, ShouldEqual, logFileContentApache)
 
@@ -429,6 +479,38 @@ func TestCollectMetrics(t *testing.T) {
 
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapache.log")
+		l.CollectMetrics(mtsApache)
+		So(logFiles, ShouldBeEmpty)
+	})
+
+	Convey("should collect valid metrics and create valid cache file (Apache multiline - date based)", t, func() {
+		os.Remove("logcache/nova_testapachemultiline.log.json")
+
+		l := Logs{}
+		m, err := l.CollectMetrics(mtsApacheMultiline)
+		So(err, ShouldBeNil)
+		So(len(m), ShouldEqual, 7)
+
+		allData := ""
+		for _, v := range m {
+			So(v.Namespace[2].IsDynamic(), ShouldBeTrue)
+			So(v.Namespace[2].Description, ShouldEqual, "Metric name defined in config file")
+			So(v.Namespace[3].IsDynamic(), ShouldBeTrue)
+			So(v.Namespace[3].Description, ShouldEqual, "Log file name")
+			So(v.Namespace[4].IsDynamic(), ShouldBeFalse)
+			allData += v.Data.(string)
+		}
+		So(allData, ShouldEqual, logFileContentApacheMultiline)
+
+		positionCache := positionCache{}
+		posData, err := ioutil.ReadFile("logcache/nova_testapachemultiline.log.json")
+		So(err, ShouldBeNil)
+		err = json.Unmarshal(posData, &positionCache)
+		So(err, ShouldBeNil)
+		So(positionCache.Offset, ShouldEqual, 1157)
+
+		// Should refresh log files list after each collection cycle
+		os.Remove("logdir/testapachemultiline.log")
 		l.CollectMetrics(mtsApache)
 		So(logFiles, ShouldBeEmpty)
 	})
@@ -448,7 +530,7 @@ func TestCollectMetrics(t *testing.T) {
 			So(v.Namespace[3].IsDynamic(), ShouldBeTrue)
 			So(v.Namespace[3].Description, ShouldEqual, "Log file name")
 			So(v.Namespace[4].IsDynamic(), ShouldBeFalse)
-			allData += "\n" + v.Data.(string) + "\n"
+			allData += v.Data.(string)
 		}
 		So(allData, ShouldEqual, logFileContentRabbit)
 
@@ -472,9 +554,11 @@ func TestCollectMetrics(t *testing.T) {
 	})
 
 	os.Remove("logdir/testapache.log")
+	os.Remove("logdir/testapachemultiline.log")
 	os.Remove("logdir/testrabbit.log")
 	os.Remove("logdir")
 	os.Remove("logcache/nova_testapache.log.json")
+	os.Remove("logcache/nova_testapachemultiline.log.json")
 	os.Remove("logcache/rabbitmq_testrabbit.log.json")
 	os.Remove("logcache")
 }

@@ -53,6 +53,7 @@ Option|Description|Default value
 "log_dir"|Filepath expression to get logs directory, e.g.:"/var/log/kolla/(neutron\|nova\|cinder)". Filepath expressions available: "(dir1\|dir2\|dirn)", "{dir1,dir2,dirn}", "*"|/var/log
 "log_file"|Regular expression to get file/files which logs in directory defined as a “log_dir”, e.g.: "keystone_apache_\S{1,}"|.*
 "splitter_type"|Predefined splitter type. Available options: new-line, empty-line, custom. If custom, you can set "splitter" option manually.|new-line
+"splitter_pos"|Position of splitter. Available options: before, after.|after
 "splitter"|Characteristic character/characters to split logs (on default logs are splitted per lines)|\\n
 "cache_dir"|Directory in which offsets for next reading of logs are saved, e.g: "/var/cache/snap/". Directory must already exist before collection, otherwise last log read position will not be saved.|/var/cache/snap
 "collection_time"|Maximum time for continuous reading of logs, it should be lower than task manifest|300ms
