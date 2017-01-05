@@ -41,8 +41,6 @@ const (
 	Name = "logs"
 	// Version of plugin
 	Version = 1
-	// MetricsLimit per single log file scan
-	MetricsLimit = 400
 )
 
 // Logs collector implementation used for testing
@@ -68,7 +66,7 @@ var splitterTypes = map[string]splitterType{"new-line": splitterType{"\n", 1}, "
 
 // positionCache is log file seek position in bytes
 type positionCache struct {
-	Offset int64 `json:"offset,omitempty"`
+	Offset int64 `json:"offset"`
 }
 
 // CollectMetrics collects metrics for testing
@@ -77,6 +75,23 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		return nil, err
 	}
 	l.refreshLogList(mts)
+
+	// Set log file splitter
+	splitter, err := regexp.Compile(l.configStr["splitter"])
+	if err != nil {
+		return nil, fmt.Errorf("splitter value is invalid")
+	}
+
+	// Set collection time limit
+	collectionTime, err := time.ParseDuration(l.configStr["collection_time"])
+	if err != nil {
+		return nil, fmt.Errorf("collection time value (collection_time) is invalid")
+	}
+	if len(logFiles) > 0 {
+		collectionTime /= time.Duration(len(logFiles))
+	}
+	logrus.WithFields(logrus.Fields{"files_count": len(logFiles), "collection_time_per_file": collectionTime}).Info("Collection time per file calculated")
+
 	metrics := []plugin.Metric{}
 
 	for _, logFilePath := range logFiles {
@@ -85,7 +100,8 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		// Load log file
 		logFile, err := os.OpenFile(logFilePath, os.O_RDONLY, 0)
 		if err != nil {
-			logrus.WithField("filename", logFilePath).Error("Error while opening log file")
+			logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": err}).Error("Error while opening log file")
+			logFile.Close()
 			continue
 		}
 
@@ -101,7 +117,9 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 			}
 		}
 		if _, err := logFile.Seek(positionCache.Offset, os.SEEK_SET); err != nil {
-			return nil, err
+			logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": err}).Error("Cannot seek log file offset")
+			logFile.Close()
+			continue
 		}
 
 		// Create buffered reader for opened log file
@@ -111,29 +129,18 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		logEntry := ""
 		prevSplitter := ""
 
-		// Set splitter
-		splitter, err := regexp.Compile(l.configStr["splitter"])
-		if err != nil {
-			return nil, fmt.Errorf("splitter value is invalid")
-		}
-
-		// Set collection time limit
-		collectStart := time.Now()
-		collectionTime, err := time.ParseDuration(l.configStr["collection_time"])
-		if err != nil {
-			return nil, fmt.Errorf("collection time value (collection_time) is invalid")
-		}
-
 		// Collect as many data as it is possible during configured collection time limit
+		collectStart := time.Now()
 		bytesReadBefore := positionCache.Offset
 		bytesRead := 0
 		metricsRead := 0
-		for time.Since(collectStart) < collectionTime && metricsRead < MetricsLimit {
+		for time.Since(collectStart) < collectionTime && int64(metricsRead) < l.configInt["metrics_limit"] {
 			// Read data from log file into memory buffer
 			b, logFileErr := logFileReader.ReadByte()
 			if logFileErr != nil {
 				if logFileErr != io.EOF {
-					return nil, err
+					logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": logFileErr}).Error("Error while reading log file data")
+					break
 				}
 			} else {
 				logEntry += string(b)
@@ -189,7 +196,7 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		logFile.Close()
 		logrus.WithFields(logrus.Fields{"collection_time": l.configStr["collection_time"], "metric_count": metricsRead, "filename": logFilePath}).Info("Metric read count during collection time")
 
-		if len(metrics) > 0 {
+		if metricsRead > 0 {
 			posData, err := json.Marshal(positionCache)
 			if err != nil {
 				logrus.WithField("error", err).Error("Cannot marshal offset cache JSON data")
@@ -233,6 +240,7 @@ func (l Logs) GetConfigPolicy() (plugin.ConfigPolicy, error) {
 	policy.AddNewStringRule([]string{"intel", Name}, "collection_time", false, plugin.SetDefaultString("300ms"))
 	policy.AddNewIntRule([]string{"intel", Name}, "scanning_dir_counter", false, plugin.SetDefaultInt(0))
 	policy.AddNewIntRule([]string{"intel", Name}, "splitter_length", false, plugin.SetDefaultInt(1))
+	policy.AddNewIntRule([]string{"intel", Name}, "metrics_limit", false, plugin.SetDefaultInt(300))
 	return *policy, nil
 }
 

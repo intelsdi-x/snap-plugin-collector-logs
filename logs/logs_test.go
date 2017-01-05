@@ -50,7 +50,7 @@ const logFileContentApacheMultiline = `2016-12-06 09:21:08.341 6 INFO oslo_servi
 2016-12-06 09:21:08.349 6 INFO nova.network.driver [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Loading network driver 'nova.network.linux_net'
 2016-12-06 09:21:08.488 20 INFO nova.osapi_compute.wsgi.server [req-67440a41-6667-4e07-b546-fa336ab5c3af - - - - -] (20) wsgi starting up on http://10.0.0.1:8774
 2016-12-06 09:21:08.493 18 INFO nova.osapi_compute.wsgi.server [req-de1ec4f5-ddb9-4726-b03b-900cd78b03ea - - - - -] (18) wsgi starting up on http://10.0.0.1:8774
-2016-12-06 09:21:08.494 22 INFO nova.osapi_compute.wsgi.server DATA ALSO HERE: 2016-12-06 09:21:08.341 [req-163c5cdb-e764-4838-93f5-8fd56b4942b2 - - - - -] (22) wsgi starting up on http://10.0.0.1:8774
+2016-12-06 09:21:08.494 22 INFO nova.osapi_compute.wsgi.server DATE ALSO HERE: 2016-12-06 09:21:08.341 [req-163c5cdb-e764-4838-93f5-8fd56b4942b2 - - - - -] (22) wsgi starting up on http://10.0.0.1:8774
 SOME LOG-RELATED
 LINES
 BETWEEN
@@ -419,6 +419,7 @@ func TestCollectMetrics(t *testing.T) {
 	cfgApache["metric_name"] = "nova"
 	cfgApache["collection_time"] = "300ms"
 	cfgApache["scanning_dir_counter"] = int64(0)
+	cfgApache["metrics_limit"] = int64(300)
 
 	cfgApacheMultiline := make(plugin.Config)
 	cfgApacheMultiline["log_dir"] = "logdir"
@@ -429,6 +430,7 @@ func TestCollectMetrics(t *testing.T) {
 	cfgApacheMultiline["metric_name"] = "nova"
 	cfgApacheMultiline["collection_time"] = "300ms"
 	cfgApacheMultiline["scanning_dir_counter"] = int64(0)
+	cfgApacheMultiline["metrics_limit"] = int64(300)
 
 	cfgRabbit := make(plugin.Config)
 	cfgRabbit["log_dir"] = "logdir"
@@ -439,6 +441,7 @@ func TestCollectMetrics(t *testing.T) {
 	cfgRabbit["metric_name"] = "rabbitmq"
 	cfgRabbit["collection_time"] = "300ms"
 	cfgRabbit["scanning_dir_counter"] = int64(3)
+	cfgRabbit["metrics_limit"] = int64(300)
 
 	mtsApache := makeMetric("nova", "testapache.log", cfgApache)
 	mtsApacheMultiline := makeMetric("nova", "testapachemultiline.log", cfgApacheMultiline)
@@ -449,6 +452,18 @@ func TestCollectMetrics(t *testing.T) {
 			l := Logs{}
 			l.CollectMetrics(append(append(mtsApache, mtsApacheMultiline...), mtsRabbit...))
 		}, ShouldNotPanic)
+	})
+
+	Convey("should limit metric count per collection", t, func() {
+		metricsLimitPrev := cfgApache["metrics_limit"]
+		defer func() { cfgApache["metrics_limit"] = metricsLimitPrev }()
+		os.Remove("logcache/nova_testapache.log.json")
+
+		l := Logs{}
+		cfgApache["metrics_limit"] = int64(10)
+		m, err := l.CollectMetrics(mtsApache)
+		So(err, ShouldBeNil)
+		So(len(m), ShouldEqual, 10)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Apache)", t, func() {

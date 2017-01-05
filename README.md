@@ -57,6 +57,7 @@ Option|Description|Default value
 "splitter"|Characteristic character/characters to split logs (on default logs are splitted per lines)|\\n
 "cache_dir"|Directory in which offsets for next reading of logs are saved, e.g: "/var/cache/snap/". Directory must already exist before collection, otherwise last log read position will not be saved.|/var/cache/snap
 "collection_time"|Maximum time for continuous reading of logs, it should be lower than task manifest|300ms
+"metrics_limit"|Limit for metrics returned per each log file during collection|300
 
 ## Documentation
 
@@ -82,6 +83,12 @@ In another terminal window:
 Load logs plugin
 ```
 $ snaptel plugin load snap-plugin-collector-logs
+Plugin loaded
+Name: logs
+Version: 1
+Type: collector
+Signed: false
+Loaded Time: Thu, 05 Jan 2017 11:58:11 CET
 ```
 See available metrics for your system
 ```
