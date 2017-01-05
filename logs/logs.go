@@ -76,6 +76,11 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 	}
 	l.refreshLogList(mts)
 
+	// Automatically create cache dir if needed
+	if err := os.MkdirAll(l.configStr["cache_dir"], 0755); err != nil {
+		return nil, fmt.Errorf("cannot create offset cache directory")
+	}
+
 	// Set log file splitter
 	splitter, err := regexp.Compile(l.configStr["splitter"])
 	if err != nil {
@@ -105,7 +110,7 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 			continue
 		}
 
-		// Go to last log file position
+		// Load last log file offset
 		posFilePath := filepath.Join(l.configStr["cache_dir"], fmt.Sprintf("%s_%s.json", l.configStr["metric_name"], logFileName))
 		positionCache := positionCache{}
 		posData, err := ioutil.ReadFile(posFilePath)
@@ -116,10 +121,21 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 				logrus.WithFields(logrus.Fields{"filename": posFilePath, "error": err}).Error("Cannot parse log offset cache file")
 			}
 		}
-		if _, err := logFile.Seek(positionCache.Offset, os.SEEK_SET); err != nil {
-			logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": err}).Error("Cannot seek log file offset")
-			logFile.Close()
-			continue
+
+		// Seek loaded file offset or reset offset if file is smaller (log file retention)
+		fi, err := logFile.Stat()
+		if err != nil {
+			logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": err}).Error("Cannot get log file size")
+		}
+		if positionCache.Offset <= fi.Size() {
+			if _, err := logFile.Seek(positionCache.Offset, os.SEEK_SET); err != nil {
+				logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": err}).Error("Cannot seek log file offset")
+				logFile.Close()
+				continue
+			}
+		} else {
+			logrus.WithField("filename", logFilePath).Warning("Offset outside file content, reading from beginning")
+			positionCache.Offset = 0
 		}
 
 		// Create buffered reader for opened log file
@@ -134,7 +150,7 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		bytesReadBefore := positionCache.Offset
 		bytesRead := 0
 		metricsRead := 0
-		for time.Since(collectStart) < collectionTime && int64(metricsRead) < l.configInt["metrics_limit"] {
+		for time.Since(collectStart) < collectionTime && int64(len(metrics)) < l.configInt["metrics_limit"] {
 			// Read data from log file into memory buffer
 			b, logFileErr := logFileReader.ReadByte()
 			if logFileErr != nil {
@@ -194,12 +210,12 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 			}
 		}
 		logFile.Close()
-		logrus.WithFields(logrus.Fields{"collection_time": l.configStr["collection_time"], "metric_count": metricsRead, "filename": logFilePath}).Info("Metric read count during collection time")
+		logrus.WithFields(logrus.Fields{"metric_count": metricsRead, "filename": logFilePath}).Info("Metric read count during collection time")
 
 		if metricsRead > 0 {
 			posData, err := json.Marshal(positionCache)
 			if err != nil {
-				logrus.WithField("error", err).Error("Cannot marshal offset cache JSON data")
+				logrus.WithError(err).Error("Cannot marshal offset cache JSON data")
 			}
 			if err := ioutil.WriteFile(posFilePath, posData, 0644); err != nil {
 				logrus.WithField("filename", logFilePath).Error("Cannot save log offset cache file")
@@ -313,7 +329,7 @@ func filterFiles(path string, filePattern string, mts []plugin.Metric) []string 
 	// Filter files inside dir
 	fp, err := regexp.Compile(filePattern)
 	if err != nil {
-		logrus.WithField("error", err).Error("File pattern must be valid regular expression!")
+		logrus.WithError(err).Error("File pattern must be valid regular expression!")
 		return []string{}
 	}
 	result := []string{}

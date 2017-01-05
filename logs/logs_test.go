@@ -386,7 +386,6 @@ func makeMetric(metricName string, logName string, cfg plugin.Config) []plugin.M
 }
 
 func TestCollectMetrics(t *testing.T) {
-	os.Mkdir("logcache", 0755)
 	os.Mkdir("logdir", 0755)
 	if file, err := os.Create("logdir/testapache.log"); err != nil {
 		t.Errorf("Test log creation error: %s", err)
