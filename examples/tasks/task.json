@@ -16,7 +16,9 @@
                     "log_dir": "/home/test/kolla/(nova|neutron)",
                     "log_file": ".*",
                     "splitter_type": "date-time",
-                    "splitter_pos": "before"
+                    "splitter_pos": "before",
+                    "collection_time": "2s",
+                    "metrics_limit": 1000
                 }
             },
             "publish": [
