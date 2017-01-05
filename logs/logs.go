@@ -149,8 +149,8 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		collectStart := time.Now()
 		bytesReadBefore := positionCache.Offset
 		bytesRead := 0
-		metricsRead := 0
-		for time.Since(collectStart) < collectionTime && int64(len(metrics)) < l.configInt["metrics_limit"] {
+		fileMetrics := []plugin.Metric{}
+		for time.Since(collectStart) < collectionTime && int64(len(metrics)+len(fileMetrics)) < l.configInt["metrics_limit"] {
 			// Read data from log file into memory buffer
 			b, logFileErr := logFileReader.ReadByte()
 			if logFileErr != nil {
@@ -196,8 +196,7 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 						Timestamp: time.Now(),
 						Version:   Version,
 					}
-					metrics = append(metrics, mt)
-					metricsRead++
+					fileMetrics = append(fileMetrics, mt)
 				}
 				prevSplitter = currentSplitter
 
@@ -210,16 +209,21 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 			}
 		}
 		logFile.Close()
-		logrus.WithFields(logrus.Fields{"metric_count": metricsRead, "filename": logFilePath}).Info("Metric read count during collection time")
+		logrus.WithFields(logrus.Fields{"metric_count": len(fileMetrics), "filename": logFilePath}).Info("Metric read count during collection time")
 
-		if metricsRead > 0 {
+		if len(fileMetrics) > 0 {
 			posData, err := json.Marshal(positionCache)
 			if err != nil {
 				logrus.WithError(err).Error("Cannot marshal offset cache JSON data")
+				continue
 			}
 			if err := ioutil.WriteFile(posFilePath, posData, 0644); err != nil {
 				logrus.WithField("filename", logFilePath).Error("Cannot save log offset cache file")
+				continue
 			}
+
+			// Return file metrics only if cache file successfully saved
+			metrics = append(metrics, fileMetrics...)
 		}
 	}
 
