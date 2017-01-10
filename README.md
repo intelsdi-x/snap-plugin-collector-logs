@@ -68,13 +68,13 @@ This builds the plugin in `./build/`
 Option|Description|Default value
 ------|-----------|-------------
 "metric_name"|Declaration of metric name, the first dynamic part of namespace|all
-"scanning_dir_counter"|Defines when directory should be scanned (per collection or after several collections), for checking if there are new files in logs directory (if not defined|logs directory is scanned per metrics collection)|0
+"scanning_dir_counter"|Defines when directory should be scanned (per collection or after several collections), for checking if there are new files in logs directory (if not defined, logs directory is scanned per each metrics collection)|0
 "log_dir"|Filepath expression to get logs directory, e.g.:"/var/log/kolla/(neutron\|nova\|cinder)". Filepath expressions available: "(dir1\|dir2\|dirn)", "{dir1,dir2,dirn}", "*"|/var/log
 "log_file"|Regular expression to get file/files which logs in directory defined as a “log_dir”, e.g.: "keystone_apache_\S{1,}"|.*
 "splitter_type"|Predefined splitter type. Available options: new-line, empty-line, custom. If custom, you can set "splitter" option manually.|new-line
 "splitter_pos"|Position of splitter. Available options: before, after.|after
 "splitter_length"|Length of splitter string, use when configuring custom splitter|1
-"splitter"|Characteristic character/characters to split logs (on default logs are splitted per lines)|\\n
+"splitter"|Characteristic character/characters to split logs (by default logs are splitted per lines)|\\n
 "cache_dir"|Directory in which offsets for next reading of logs are saved, e.g: "/var/cache/snap/". Created automatically if not exists.|/var/cache/snap
 "collection_time"|Maximum time for continuous reading of logs, it should be lower than task manifest|300ms
 "metrics_limit"|Limit for metrics returned per each log file during collection|300
@@ -100,6 +100,7 @@ $ snapteld -l 1 -t 0
 ```
 
 In another terminal window:
+
 Load logs plugin
 ```
 $ snaptel plugin load snap-plugin-collector-logs
