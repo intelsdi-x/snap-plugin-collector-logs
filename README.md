@@ -71,7 +71,7 @@ Option|Description|Default value
 "scanning_dir_counter"|Defines when directory should be scanned (per collection or after several collections), for checking if there are new files in logs directory (if not defined, logs directory is scanned per each metrics collection)|0
 "log_dir"|Filepath expression to get logs directory, e.g.:"/var/log/kolla/(neutron\|nova\|cinder)". Filepath expressions available: "(dir1\|dir2\|dirn)", "{dir1,dir2,dirn}", "*"|/var/log
 "log_file"|Regular expression to get file/files which logs in directory defined as a “log_dir”, e.g.: "keystone_apache_\S{1,}"|.*
-"splitter_type"|Predefined splitter type. Available options: new-line, empty-line, custom. If custom, you can set "splitter" option manually.|new-line
+"splitter_type"|Predefined splitter type. Available options: new-line, empty-line, date-time, custom. If custom, you can set "splitter" option manually.|new-line
 "splitter_pos"|Position of splitter. Available options: before, after.|after
 "splitter_length"|Length of splitter string, use when configuring custom splitter|1
 "splitter"|Characteristic character/characters to split logs (by default logs are splitted per lines)|\\n
@@ -131,11 +131,14 @@ Create a task manifest file (e.g. `task-logs.json`):
             },
             "config": {
                 "/intel/logs": {
-                    "metric_name": "rabbit_logs",
+                    "metric_name": "nova_logs",
                     "cache_dir": "/home/test/cache/snap",
-                    "log_dir": "/home/test/kolla/*",
-                    "log_file": ".*rabbit.*",
-                    "splitter_type": "empty-line"
+                    "log_dir": "/home/test/logs/(nova|neutron)",
+                    "log_file": ".*",
+                    "splitter_type": "date-time",
+                    "splitter_pos": "before",
+                    "collection_time": "2s",
+                    "metrics_limit": 1000
                 }
             },
             "publish": [
