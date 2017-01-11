@@ -180,8 +180,11 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 					case "before":
 						data = fmt.Sprintf("%s%s", prevSplitter, data)
 
-						// Rewind offset to previous splitter position if splitter "before" option enabled
-						positionCache.Offset -= int64(len(prevSplitter))
+						// Rewind offset before current splitter if "before" option enabled, because previous splitter is used
+						// Do not apply if EOF found
+						if !(logFileErr == io.EOF) {
+							positionCache.Offset -= int64(len(currentSplitter))
+						}
 					case "after":
 						data = fmt.Sprintf("%s%s", data, currentSplitter)
 					default:
