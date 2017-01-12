@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/intelsdi-x/snap-plugin-lib-go/v1/plugin"
@@ -402,6 +403,13 @@ func TestCollectMetrics(t *testing.T) {
 		file.WriteString(logFileContentApache)
 		file.Close()
 	}
+	if file, err := os.Create("logdir/testapachenewline.log"); err != nil {
+		t.Errorf("Test log creation error: %s", err)
+		t.Fail()
+	} else {
+		file.WriteString(logFileContentApache)
+		file.Close()
+	}
 	if file, err := os.Create("logdir/testapachemultiline.log"); err != nil {
 		t.Errorf("Test log creation error: %s", err)
 		t.Fail()
@@ -420,13 +428,24 @@ func TestCollectMetrics(t *testing.T) {
 	cfgApache := make(plugin.Config)
 	cfgApache["log_dir"] = "logdir"
 	cfgApache["log_file"] = "testapache.log"
-	cfgApache["splitter_type"] = "new-line"
-	cfgApache["splitter_pos"] = "after"
+	cfgApache["splitter_type"] = "date-time"
+	cfgApache["splitter_pos"] = "before"
 	cfgApache["cache_dir"] = "logcache"
 	cfgApache["metric_name"] = "nova"
 	cfgApache["collection_time"] = "300ms"
 	cfgApache["scanning_dir_counter"] = int64(0)
 	cfgApache["metrics_limit"] = int64(300)
+
+	cfgApacheNewline := make(plugin.Config)
+	cfgApacheNewline["log_dir"] = "logdir"
+	cfgApacheNewline["log_file"] = "testapachenewline.log"
+	cfgApacheNewline["splitter_type"] = "new-line"
+	cfgApacheNewline["splitter_pos"] = "after"
+	cfgApacheNewline["cache_dir"] = "logcache"
+	cfgApacheNewline["metric_name"] = "nova"
+	cfgApacheNewline["collection_time"] = "300ms"
+	cfgApacheNewline["scanning_dir_counter"] = int64(0)
+	cfgApacheNewline["metrics_limit"] = int64(300)
 
 	cfgApacheMultiline := make(plugin.Config)
 	cfgApacheMultiline["log_dir"] = "logdir"
@@ -451,13 +470,14 @@ func TestCollectMetrics(t *testing.T) {
 	cfgRabbit["metrics_limit"] = int64(300)
 
 	mtsApache := makeMetric("nova", "testapache.log", cfgApache)
+	mtsApacheNewline := makeMetric("nova", "testapachenewline.log", cfgApacheNewline)
 	mtsApacheMultiline := makeMetric("nova", "testapachemultiline.log", cfgApacheMultiline)
 	mtsRabbit := makeMetric("rabbitmq", "testrabbit.log", cfgRabbit)
 
 	Convey("should not panic and return valid namespace", t, func() {
 		So(func() {
 			l := Logs{}
-			l.CollectMetrics(append(append(mtsApache, mtsApacheMultiline...), mtsRabbit...))
+			l.CollectMetrics(append(append(append(mtsApache, mtsApacheNewline...), mtsApacheMultiline...), mtsRabbit...))
 		}, ShouldNotPanic)
 
 		os.Remove("logcache/nova_testapache.log.json")
@@ -527,16 +547,27 @@ func TestCollectMetrics(t *testing.T) {
 		})
 	})
 
-	Convey("should collect valid metrics and create valid cache file (Apache)", t, func() {
+	Convey("should collect valid metrics and create valid cache file (Apache - date based)", t, func() {
 		os.Remove("logcache/nova_testapache.log.json")
 
 		l := Logs{}
 		m, err := l.CollectMetrics(mtsApache)
 		So(err, ShouldBeNil)
 		So(len(m), ShouldEqual, 15)
-		allData := joinMetricData(m)
+		m2, err := l.CollectMetrics(mtsApache)
+		So(err, ShouldBeNil)
+		So(len(m2), ShouldEqual, 0)
 
-		So(allData, ShouldEqual, logFileContentApache)
+		Convey("each log file line should resemble each metric", func() {
+			allData := joinMetricData(m)
+			So(allData, ShouldEqual, logFileContentApache)
+
+			logLines := strings.Split(strings.TrimSpace(logFileContentApache), "\n")
+			So(len(logLines), ShouldEqual, len(m))
+			for i, v := range m {
+				So(strings.TrimSpace(v.Data.(string)), ShouldEqual, logLines[i])
+			}
+		})
 
 		positionCache := positionCache{}
 		posData, err := ioutil.ReadFile("logcache/nova_testapache.log.json")
@@ -548,6 +579,41 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapache.log")
 		l.CollectMetrics(mtsApache)
+		So(logFiles, ShouldBeEmpty)
+	})
+
+	Convey("should collect valid metrics and create valid cache file (Apache - new line based)", t, func() {
+		os.Remove("logcache/nova_testapachenewline.log.json")
+
+		l := Logs{}
+		m, err := l.CollectMetrics(mtsApacheNewline)
+		So(err, ShouldBeNil)
+		So(len(m), ShouldEqual, 15)
+		m2, err := l.CollectMetrics(mtsApache)
+		So(err, ShouldBeNil)
+		So(len(m2), ShouldEqual, 0)
+
+		Convey("each log file line should resemble each metric", func() {
+			allData := joinMetricData(m)
+			So(allData, ShouldEqual, logFileContentApache)
+
+			logLines := strings.Split(strings.TrimSpace(logFileContentApache), "\n")
+			So(len(logLines), ShouldEqual, len(m))
+			for i, v := range m {
+				So(strings.TrimSpace(v.Data.(string)), ShouldEqual, logLines[i])
+			}
+		})
+
+		positionCache := positionCache{}
+		posData, err := ioutil.ReadFile("logcache/nova_testapachenewline.log.json")
+		So(err, ShouldBeNil)
+		err = json.Unmarshal(posData, &positionCache)
+		So(err, ShouldBeNil)
+		So(positionCache.Offset, ShouldEqual, 2193)
+
+		// Should refresh log files list after each collection cycle
+		os.Remove("logdir/testapachenewline.log")
+		l.CollectMetrics(mtsApacheNewline)
 		So(logFiles, ShouldBeEmpty)
 	})
 
@@ -567,11 +633,11 @@ func TestCollectMetrics(t *testing.T) {
 		So(err, ShouldBeNil)
 		err = json.Unmarshal(posData, &positionCache)
 		So(err, ShouldBeNil)
-		So(positionCache.Offset, ShouldEqual, 1133)
+		So(positionCache.Offset, ShouldEqual, 1157)
 
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapachemultiline.log")
-		l.CollectMetrics(mtsApache)
+		l.CollectMetrics(mtsApacheMultiline)
 		So(logFiles, ShouldBeEmpty)
 	})
 
@@ -591,7 +657,7 @@ func TestCollectMetrics(t *testing.T) {
 		So(err, ShouldBeNil)
 		err = json.Unmarshal(posData, &positionCache)
 		So(err, ShouldBeNil)
-		So(positionCache.Offset, ShouldEqual, 1895)
+		So(positionCache.Offset, ShouldEqual, 1897)
 
 		// Should refresh log files list after 3 collection cycles
 		os.Remove("logdir/testrabbit.log")
@@ -606,10 +672,12 @@ func TestCollectMetrics(t *testing.T) {
 	})
 
 	os.Remove("logdir/testapache.log")
+	os.Remove("logdir/testapachenewline.log")
 	os.Remove("logdir/testapachemultiline.log")
 	os.Remove("logdir/testrabbit.log")
 	os.Remove("logdir")
 	os.Remove("logcache/nova_testapache.log.json")
+	os.Remove("logcache/nova_testapachenewline.log.json")
 	os.Remove("logcache/nova_testapachemultiline.log.json")
 	os.Remove("logcache/rabbitmq_testrabbit.log.json")
 	os.Remove("logcache")
