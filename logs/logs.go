@@ -150,9 +150,11 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		bytesReadBefore := positionCache.Offset
 		bytesRead := 0
 		fileMetrics := []plugin.Metric{}
+		var logFileErr error
 		for time.Since(collectStart) < collectionTime && int64(len(metrics)+len(fileMetrics)) < l.configInt["metrics_limit"] {
 			// Read data from log file into memory buffer
-			b, logFileErr := logFileReader.ReadByte()
+			var b byte
+			b, logFileErr = logFileReader.ReadByte()
 			if logFileErr != nil {
 				if logFileErr != io.EOF {
 					logrus.WithFields(logrus.Fields{"filename": logFilePath, "error": logFileErr}).Error("Error while reading log file data")
@@ -216,6 +218,15 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 		}
 		logFile.Close()
 		logrus.WithFields(logrus.Fields{"metric_count": len(fileMetrics), "filename": logFilePath}).Info("Metric read count during collection time")
+
+		if logFileErr != io.EOF && len(fileMetrics) == 0 {
+			logrus.WithFields(logrus.Fields{
+				"file_path":                logFilePath,
+				"collection_time_per_file": collectionTime,
+				"collection_time":          l.configStr["collection_time"],
+				"metrics_limit":            l.configInt["metrics_limit"],
+			}).Warn("Logs to read stay in log file but there were not read, check task configuration")
+		}
 
 		if len(fileMetrics) > 0 {
 			posData, err := json.Marshal(positionCache)
