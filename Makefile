@@ -2,7 +2,7 @@
 # http://www.apache.org/licenses/LICENSE-2.0.txt
 #
 #
-# Copyright 2016 Intel Corporation
+# Copyright 2015 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,11 @@ test-medium:
 	bash -c "./scripts/test.sh medium"
 test-large:
 	bash -c "./scripts/test.sh large"
+test-all:
+	$(MAKE) test-small
+	$(MAKE) test-medium
+	$(MAKE) test-large
 check:
 	$(MAKE) test
 all:
-	bash -c "./scripts/build.sh $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))"
+	bash -c "./scripts/build.sh"
