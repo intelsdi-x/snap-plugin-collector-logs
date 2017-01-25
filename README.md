@@ -101,6 +101,11 @@ $ snapteld -l 1 -t 0
 
 In another terminal window:
 
+Download logs collector plugin:
+```
+$ wget http://snap.ci.snap-telemetry.io/plugins/snap-plugin-collector-logs/latest/linux/x86_64/snap-plugin-collector-logs
+```
+
 Load logs plugin
 ```
 $ snaptel plugin load snap-plugin-collector-logs
@@ -154,6 +159,10 @@ Create a task manifest file (e.g. `task-logs.json`):
 }
 ```
 
+Download file publisher plugin:
+```
+$ wget http://snap.ci.snap-telemetry.io/plugins/snap-plugin-publisher-file/latest/linux/x86_64/snap-plugin-publisher-file
+```
 Load file plugin for publishing:
 ```
 $ snaptel plugin load snap-plugin-publisher-file
