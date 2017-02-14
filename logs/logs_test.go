@@ -318,7 +318,7 @@ func TestRefreshLogList(t *testing.T) {
 		l := Logs{}
 		l.loadConfig(cfg)
 		l.refreshLogList(mts)
-		So(logFiles, ShouldResemble, []string{"logdira/testfile2", "logdira/testfile3", "logdirb/testfile2", "logdirb/testfile3"})
+		So(l.logFiles, ShouldResemble, []string{"logdira/testfile2", "logdira/testfile3", "logdirb/testfile2", "logdirb/testfile3"})
 	})
 
 	Convey("should list only logs in namespace log_file entry", t, func() {
@@ -331,7 +331,7 @@ func TestRefreshLogList(t *testing.T) {
 		l := Logs{}
 		l.loadConfig(cfg)
 		l.refreshLogList(mts)
-		So(logFiles, ShouldResemble, []string{"logdira/testfile2", "logdirb/testfile2", "logdirc/testfile2"})
+		So(l.logFiles, ShouldResemble, []string{"logdira/testfile2", "logdirb/testfile2", "logdirc/testfile2"})
 	})
 
 	os.Remove("logdira/testfile1")
@@ -579,7 +579,7 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapache.log")
 		l.CollectMetrics(mtsApache)
-		So(logFiles, ShouldBeEmpty)
+		So(l.logFiles, ShouldBeEmpty)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Apache - new line based)", t, func() {
@@ -614,7 +614,7 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapachenewline.log")
 		l.CollectMetrics(mtsApacheNewline)
-		So(logFiles, ShouldBeEmpty)
+		So(l.logFiles, ShouldBeEmpty)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Apache multiline - date based)", t, func() {
@@ -638,7 +638,7 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after each collection cycle
 		os.Remove("logdir/testapachemultiline.log")
 		l.CollectMetrics(mtsApacheMultiline)
-		So(logFiles, ShouldBeEmpty)
+		So(l.logFiles, ShouldBeEmpty)
 	})
 
 	Convey("should collect valid metrics and create valid cache file (Rabbit)", t, func() {
@@ -662,13 +662,13 @@ func TestCollectMetrics(t *testing.T) {
 		// Should refresh log files list after 3 collection cycles
 		os.Remove("logdir/testrabbit.log")
 		l.CollectMetrics(mtsRabbit)
-		So(logFiles, ShouldNotBeEmpty)
+		So(l.logFiles, ShouldNotBeEmpty)
 		l.CollectMetrics(mtsRabbit)
-		So(logFiles, ShouldNotBeEmpty)
+		So(l.logFiles, ShouldNotBeEmpty)
 		l.CollectMetrics(mtsRabbit)
-		So(logFiles, ShouldNotBeEmpty)
+		So(l.logFiles, ShouldNotBeEmpty)
 		l.CollectMetrics(mtsRabbit)
-		So(logFiles, ShouldBeEmpty) // <- 4th collection - list should be updated now
+		So(l.logFiles, ShouldBeEmpty) // <- 4th collection - list should be updated now
 	})
 
 	os.Remove("logdir/testapache.log")

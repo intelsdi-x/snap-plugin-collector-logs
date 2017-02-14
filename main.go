@@ -29,5 +29,5 @@ import (
 
 func main() {
 	// Start a collector
-	plugin.StartCollector(logs.Logs{}, logs.Name, logs.Version, plugin.RoutingStrategy(plugin.StickyRouter))
+	plugin.StartCollector(logs.New(), logs.Name, logs.Version, plugin.RoutingStrategy(plugin.StickyRouter))
 }
