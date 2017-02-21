@@ -40,26 +40,24 @@ const (
 	// Name of plugin
 	Name = "logs"
 	// Version of plugin
-	Version = 1
+	Version = 2
 )
 
 // Logs collector implementation used for testing
 type Logs struct {
 	configStr map[string]string
 	configInt map[string]int64
+
+	// Log files list related variables that should persist between CollectMetrics calls
+	logFiles        []string
+	logFilesScanned bool
+	scanningCounter int64
 }
 
 type splitterType struct {
 	regex  string
 	length int64
 }
-
-// Log files list related variables that should persist between CollectMetrics calls
-var (
-	logFiles        []string
-	logFilesScanned bool
-	scanningCounter int64
-)
 
 // splitterTypes is a map with predefined regexp separators for different log types
 var splitterTypes = map[string]splitterType{"new-line": splitterType{"\n", 1}, "empty-line": splitterType{"\n\n", 2}, "date-time": splitterType{"(^|\n)[0-9]{4}-[0-1][0-2]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9]{3}$", 24}}
@@ -69,8 +67,13 @@ type positionCache struct {
 	Offset int64 `json:"offset"`
 }
 
+// New logs collector plugin instance
+func New() *Logs {
+	return &Logs{}
+}
+
 // CollectMetrics collects metrics for testing
-func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
+func (l *Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 	if err := l.loadConfig(mts[0].Config); err != nil {
 		return nil, err
 	}
@@ -92,14 +95,14 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 	if err != nil {
 		return nil, fmt.Errorf("collection time value (collection_time) is invalid")
 	}
-	if len(logFiles) > 0 {
-		collectionTime /= time.Duration(len(logFiles))
+	if len(l.logFiles) > 0 {
+		collectionTime /= time.Duration(len(l.logFiles))
 	}
-	logrus.WithFields(logrus.Fields{"files_count": len(logFiles), "collection_time_per_file": collectionTime}).Info("Collection time per file calculated")
+	logrus.WithFields(logrus.Fields{"files_count": len(l.logFiles), "collection_time_per_file": collectionTime}).Info("Collection time per file calculated")
 
 	metrics := []plugin.Metric{}
 
-	for _, logFilePath := range logFiles {
+	for _, logFilePath := range l.logFiles {
 		_, logFileName := filepath.Split(logFilePath)
 
 		// Load log file
@@ -248,7 +251,7 @@ func (l Logs) CollectMetrics(mts []plugin.Metric) ([]plugin.Metric, error) {
 }
 
 //GetMetricTypes returns metric types for testing
-func (l Logs) GetMetricTypes(cfg plugin.Config) ([]plugin.Metric, error) {
+func (l *Logs) GetMetricTypes(cfg plugin.Config) ([]plugin.Metric, error) {
 	if err := l.loadConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -265,7 +268,7 @@ func (l Logs) GetMetricTypes(cfg plugin.Config) ([]plugin.Metric, error) {
 }
 
 //GetConfigPolicy returns a ConfigPolicy for testing
-func (l Logs) GetConfigPolicy() (plugin.ConfigPolicy, error) {
+func (l *Logs) GetConfigPolicy() (plugin.ConfigPolicy, error) {
 	policy := plugin.NewConfigPolicy()
 	policy.AddNewStringRule([]string{"intel", Name}, "metric_name", false, plugin.SetDefaultString("all"))
 	policy.AddNewStringRule([]string{"intel", Name}, "log_dir", false, plugin.SetDefaultString("/var/log"))
@@ -364,8 +367,8 @@ func filterFiles(path string, filePattern string, mts []plugin.Metric) []string 
 
 // Initialize plugin configuration
 func (l *Logs) refreshLogList(mts []plugin.Metric) {
-	if scanningCounter <= 0 || !logFilesScanned {
-		scanningCounter = l.configInt["scanning_dir_counter"]
+	if l.scanningCounter <= 0 || !l.logFilesScanned {
+		l.scanningCounter = l.configInt["scanning_dir_counter"]
 
 		logDir := l.configStr["log_dir"]
 		logFile := l.configStr["log_file"]
@@ -373,13 +376,13 @@ func (l *Logs) refreshLogList(mts []plugin.Metric) {
 		allPaths := []string{}
 		expandPaths(logDir, &allPaths)
 
-		logFiles = []string{}
+		l.logFiles = []string{}
 		for _, path := range allPaths {
-			logFiles = append(logFiles, filterFiles(path, fmt.Sprintf("^%s$", logFile), mts)...)
+			l.logFiles = append(l.logFiles, filterFiles(path, fmt.Sprintf("^%s$", logFile), mts)...)
 		}
-		logFilesScanned = true
+		l.logFilesScanned = true
 	} else {
-		scanningCounter--
+		l.scanningCounter--
 	}
 }
 
