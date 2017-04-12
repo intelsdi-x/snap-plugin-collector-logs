@@ -40,7 +40,7 @@ const (
 	// Name of plugin
 	Name = "logs"
 	// Version of plugin
-	Version = 2
+	Version = 3
 )
 
 // Logs collector implementation used for testing
@@ -60,7 +60,7 @@ type splitterType struct {
 }
 
 // splitterTypes is a map with predefined regexp separators for different log types
-var splitterTypes = map[string]splitterType{"new-line": splitterType{"\n", 1}, "empty-line": splitterType{"\n\n", 2}, "date-time": splitterType{"(^|\n)[0-9]{4}-[0-1][0-2]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9]{3}$", 24}}
+var splitterTypes = map[string]splitterType{"new-line": splitterType{"\n", 1}, "empty-line": splitterType{"\n\n", 2}, "date-time": splitterType{"(^|\n)[0-9]{4}-[0-1][0-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9]{3}$", 24}}
 
 // positionCache is log file seek position in bytes
 type positionCache struct {
