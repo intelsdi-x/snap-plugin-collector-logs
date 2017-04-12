@@ -47,16 +47,16 @@ const logFileContentApache = `2016-12-06 09:21:08.341 6 INFO oslo_service.servic
 2016-12-07 03:39:17.960 18 INFO nova.wsgi [-] Stopping WSGI server.
 `
 
-const logFileContentApacheMultiline = `2016-12-06 09:21:08.341 6 INFO oslo_service.service [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Starting 5 workers
-2016-12-06 09:21:08.349 6 INFO nova.network.driver [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Loading network driver 'nova.network.linux_net'
-2016-12-06 09:21:08.488 20 INFO nova.osapi_compute.wsgi.server [req-67440a41-6667-4e07-b546-fa336ab5c3af - - - - -] (20) wsgi starting up on http://10.0.0.1:8774
-2016-12-06 09:21:08.493 18 INFO nova.osapi_compute.wsgi.server [req-de1ec4f5-ddb9-4726-b03b-900cd78b03ea - - - - -] (18) wsgi starting up on http://10.0.0.1:8774
-2016-12-06 09:21:08.494 22 INFO nova.osapi_compute.wsgi.server DATE ALSO HERE: 2016-12-06 09:21:08.341 [req-163c5cdb-e764-4838-93f5-8fd56b4942b2 - - - - -] (22) wsgi starting up on http://10.0.0.1:8774
+const logFileContentApacheMultiline = `2016-09-06 09:21:08.341 6 INFO oslo_service.service [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Starting 5 workers
+2016-09-06 09:21:08.349 6 INFO nova.network.driver [req-cb760354-bbb0-4968-92e6-3312b8a7d223 - - - - -] Loading network driver 'nova.network.linux_net'
+2016-09-06 09:21:08.488 20 INFO nova.osapi_compute.wsgi.server [req-67440a41-6667-4e07-b546-fa336ab5c3af - - - - -] (20) wsgi starting up on http://10.0.0.1:8774
+2016-09-06 09:21:08.493 18 INFO nova.osapi_compute.wsgi.server [req-de1ec4f5-ddb9-4726-b03b-900cd78b03ea - - - - -] (18) wsgi starting up on http://10.0.0.1:8774
+2016-09-06 09:21:08.494 22 INFO nova.osapi_compute.wsgi.server DATE ALSO HERE: 2016-12-06 09:21:08.341 [req-163c5cdb-e764-4838-93f5-8fd56b4942b2 - - - - -] (22) wsgi starting up on http://10.0.0.1:8774
 SOME LOG-RELATED
 LINES
 BETWEEN
-2016-12-06 09:21:08.499 19 INFO nova.osapi_compute.wsgi.server [req-ee7ac782-32aa-492c-aa48-3d84825814e7 - - - - -] (19) wsgi starting up on http://10.0.0.1:8774
-2016-12-06 09:21:08.500 21 INFO nova.osapi_compute.wsgi.server [req-a253f557-bee0-4d13-933c-e690a9a4c69f - - - - -] (21) wsgi starting up on http://10.0.0.1:8774
+2016-09-06 09:21:08.499 19 INFO nova.osapi_compute.wsgi.server [req-ee7ac782-32aa-492c-aa48-3d84825814e7 - - - - -] (19) wsgi starting up on http://10.0.0.1:8774
+2016-09-06 09:21:08.500 21 INFO nova.osapi_compute.wsgi.server [req-a253f557-bee0-4d13-933c-e690a9a4c69f - - - - -] (21) wsgi starting up on http://10.0.0.1:8774
 `
 
 const logFileContentRabbit = `
