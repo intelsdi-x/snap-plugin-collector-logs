@@ -40,7 +40,7 @@ const (
 	// Name of plugin
 	Name = "logs"
 	// Version of plugin
-	Version = 3
+	Version = 4
 )
 
 // Logs collector implementation used for testing
