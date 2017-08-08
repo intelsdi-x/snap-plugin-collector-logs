@@ -37,7 +37,7 @@ It's used in the [Snap framework](http://github.com:intelsdi-x/snap).
 
 ## Getting Started
 ### System Requirements 
-* [golang 1.6+](https://golang.org/dl/) (needed only for building)
+* [golang 1.7+](https://golang.org/dl/) (needed only for building)
 
 ### Operating systems
 All OSs currently supported by snap:
